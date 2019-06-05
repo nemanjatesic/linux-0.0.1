@@ -12,7 +12,6 @@ int main(char *args)
 		_exit(1);
 	}
 	char * str = "/root/.encryptedList";
-
 	if (brojArg == 1){
 		int br = zapocni(str,0);
 		if (br < 0)
