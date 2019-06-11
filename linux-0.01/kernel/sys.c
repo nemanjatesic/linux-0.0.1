@@ -8,13 +8,22 @@
 #include <sys/utsname.h>
 #include <string.h>
 #include <sys/stat.h>
+#define BROJ 8
 
 extern short debugBr = 0;
 extern int brojZaGlavniFile;
 extern struct m_inode * isItInTheFile(struct m_inode * inode);
 extern long startup_time;
+extern int hashString(char *string);
 
+char nizProcesa[BROJ][513];
+short nizProcesIDova[NR_TASKS] = {-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1};
+long nizProcesVremena[BROJ] = {-1,-1,-1,-1,-1,-1,-1,-1};
+char nizSlobodnih[BROJ] = {1,1,1,1,1,1,1,1};
 char global_key[513] = "\0";
+long brojacGlobal = -1;
+long prviSledeciBrojac = -1;
+struct task_struct **tmp;
 
 int sys_ftime()
 {
@@ -239,7 +248,7 @@ int sys_null(int nr)
 	if (prev_nr!=nr) 
 	{
 		prev_nr=nr;
-//		printk("system call num %d not available\n",nr);
+		printk("system call num %d not available\n",nr);
 	}
 	return -ENOSYS;
 }
@@ -262,12 +271,12 @@ void swapInt(int *a, int *b)
     *b = temp;
 }
 
-void enkriptuj(char * in, char * out) 
+void enkriptuj(char * in, char * out, char * stringKey) 
 {
     char buffer[1025],keyTmp[513];
     char temp;
-    strcpy(keyTmp, global_key);
-    int col = strlen(global_key), row = 1024 / col, i, j, n, br = 0;
+    strcpy(keyTmp, stringKey);
+    int col = strlen(stringKey), row = 1024 / col, i, j, n, br = 0;
     for (i = 0; i < row; i++) {
         for (j = 0; j < col; j++)
             buffer[i * col + j] = in[br++];
@@ -288,12 +297,12 @@ void enkriptuj(char * in, char * out)
     }
 }
 
-void dekriptuj(char * in, char * out)
+void dekriptuj(char * in, char * out, char * stringKey)
 {
 	char buffer[1025], keyTmp[513];
 	int keyIdx[513];
-	int col = strlen(global_key), row = 1024 / col, i, j, br = 0;
-	strcpy(keyTmp, global_key);
+	int col = strlen(stringKey), row = 1024 / col, i, j, br = 0;
+	strcpy(keyTmp, stringKey);
 	for (i = 0; i < col; i++)
 	    keyIdx[i] = i;
 	for (j = 0; j < col; j++) {
@@ -332,8 +341,20 @@ int sys_change_user_layout(const char *layout, int map)
 	return 0;
 }
 
-int sys_keyset(char *string)
+int getIndexCurrenta(){
+	int i;
+	for (i = 0 ; i < NR_TASKS ; i++){
+		if (task[i] == current){
+			return i;
+		}
+	}
+	return 0;
+}
+
+int sys_keyset(int mode,char *string)
 {
+	if (mode != 0 && mode != 1)
+		return -ERANGE;
 	int i = 0;
 	char str[513];
 	while (get_fs_byte(string + i) != '\0'){
@@ -341,13 +362,81 @@ int sys_keyset(char *string)
 		i++;
 	}
 	str[i] = '\0';
+
 	if (i > 512) return -ENOTPOWOFTWO;
-	while(i % 2 == 0){
-		i = i / 2;
+	if(!((i != 0) && ((i &(i - 1)) == 0))) 
+		return -ENOTPOWOFTWO;
+
+	int vreme_tmp = jiffies/HZ;
+
+	if (!mode){
+		strcpy(global_key,str);
+		brojacGlobal = vreme_tmp + 120;
+		return 0;
 	}
-	if (i != 1) return -ENOTPOWOFTWO;
-	strcpy(global_key,str);
+
+	if (mode){
+		char boolean = 1;
+		int index = getIndexCurrenta();
+
+		if (nizProcesIDova[index] != -1){
+			strcpy(nizProcesa[nizProcesIDova[index]],str);
+			nizProcesVremena[nizProcesIDova[index]] = vreme_tmp + 45;
+			boolean = 0;
+		}
+
+		if (boolean){
+			short brojMesta = -1;
+			int j;
+			for (j = 0 ; j < BROJ ; j++){
+				if (nizSlobodnih[j] == 1){
+					brojMesta = j;
+				}
+			}
+			if (brojMesta == -1){
+				panic("Too many processes in same time.");
+			}
+			nizProcesIDova[index] = brojMesta;
+			nizProcesVremena[nizProcesIDova[index]] = vreme_tmp + 45;
+			nizSlobodnih[brojMesta] = 0;
+			strcpy(nizProcesa[brojMesta],str);
+			if (prviSledeciBrojac == -1 || prviSledeciBrojac > vreme_tmp + 45){
+				prviSledeciBrojac = vreme_tmp + 45;
+			}
+		}
+	}
+
 	return 0;
+}
+
+
+int funkcija(void)
+{
+	long timeTMP = jiffies/HZ;
+	if (brojacGlobal <= timeTMP && brojacGlobal != -1){
+		global_key[0] = '\0';
+		brojacGlobal = -1;
+	}
+	if (prviSledeciBrojac > timeTMP || prviSledeciBrojac == -1)
+		return 0;
+	int i;
+	prviSledeciBrojac = -1;
+	for (i = 0 ; i < NR_TASKS ; i++){
+		if (nizProcesIDova[i] != -1){
+			if(nizProcesVremena[nizProcesIDova[i]] <= timeTMP){
+				nizProcesVremena[nizProcesIDova[i]] = -1;
+				nizSlobodnih[nizProcesIDova[i]] = 1;
+				nizProcesa[nizProcesIDova[i]][0] = '\0';
+				nizProcesIDova[i] = -1;
+				continue;
+			}
+		}else {
+			continue;
+		}
+		if (nizProcesVremena[nizProcesIDova[i]] != -1 && (nizProcesVremena[nizProcesIDova[i]] < prviSledeciBrojac || prviSledeciBrojac == -1)){
+			prviSledeciBrojac = nizProcesVremena[nizProcesIDova[i]];
+		}
+	}
 }
 
 void reverse(char *s)
@@ -372,7 +461,6 @@ void reverse(char *s)
 
 void brojToString(int broj, char * out)
 {
-	int tmp = 0;
 	int i = 0;
 	do{
 		out[i++] = broj % 10 + '0';
@@ -413,35 +501,49 @@ int doesItContainString(char * big, char * small)
 	return -1;
 }
 
-void izbrisiIzFajla(struct m_inode * inodeZaBrisanje)
+void fillStuff(struct buffer_head * bh, struct m_inode * inode){
+	int i;
+	for (i = strlen(bh->b_data) ; i <= 1023 ; i++){
+		bh->b_data[i] = '\0';
+		inode->i_size += 1;
+	}
+}
+
+void izbrisiIzFajla(struct m_inode * inodeZaBrisanje, int duzinaHesha)
 {
 	struct m_inode * inode;
 	struct buffer_head * bh;
 	inode = iget(0x301,brojZaGlavniFile);
-	int block = inode->i_size;
-	int inodeBlock;
-
-	inodeBlock = bmap(inode,block/1024);
-	bh = bread(inode->i_dev,inodeBlock);
 
 	char buffer[5];
 	brojToString(inodeZaBrisanje->i_num,buffer);
 
-	int brojGdeKrece = doesItContainString(bh->b_data,buffer);
-	
+	int block = 0;
+	int inodeBlock;
+	int brojGdeKrece;
+	int brojPomeranja = strlen(buffer) + 2 + duzinaHesha;
+
+	while(block < inode->i_size){
+		inodeBlock = bmap(inode,block/1024);
+		bh = bread(inode->i_dev,inodeBlock);
+		brojGdeKrece = doesItContainString(bh->b_data,buffer);
+		if (brojGdeKrece != -1){
+			if (brojGdeKrece > 0) brojGdeKrece--;
+			if (strlen(buffer) == strlen(bh->b_data)) brojPomeranja--;
+			shiftStringToLeft(brojGdeKrece, brojPomeranja, bh->b_data);
+			if (block + 1024 > inode->i_size)
+				inode->i_size -= brojPomeranja;
+		}
+		block += 1024;
+		brelse(bh);
+	}
+
 	// +1 zbog toga sto zelimo da obrisemo i ' ' (razmak koji se nalazi u fajlu)
 	// ali ako je prvi u fajlu onda zelim samo orignalni broj bez +1
-	int brojPomeranja = strlen(buffer) + 1; 
+	/*int brojPomeranja = strlen(buffer) + 1; 
 	if (brojGdeKrece > 0) brojGdeKrece--;
-	if (strlen(buffer) == strlen(bh->b_data)/*inode->i_size*/) brojPomeranja--;
+	if (strlen(buffer) == strlen(bh->b_data)) brojPomeranja--;
 	// Ovaj else sluzi zato sto zelimo da krene od ' ' ne odakle ga je nasao
-	
-	// Nije moguc slucaj ali nisam siguran
-	if (brojGdeKrece == -1){ 
-		brelse(bh);
-		iput(inode);
-		return;
-	}
 	
 	shiftStringToLeft(brojGdeKrece, brojPomeranja, bh->b_data);
 	inode->i_size -= brojPomeranja;
@@ -450,56 +552,91 @@ void izbrisiIzFajla(struct m_inode * inodeZaBrisanje)
 	bh->b_dirt = 1;
 	if (debugBr) printk("Ovoliko je string : |%s|,ovoliko je duzina stringa : %d, inode size : %d\n", bh->b_data,strlen(bh->b_data),inode->i_size);
 	//printk("Ovoliko je string : %s,inode size : %d\n", bh->b_data,inode->i_size);
-	brelse(bh);
-	iput(inode);
+	brelse(bh);*/
+	//iput(inode);
 }
 
 void upisiUFajl(struct m_inode * inodeZaUpis)
 {
-	struct m_inode * inode;
-	struct buffer_head * bh;
-	inode = iget(0x301,brojZaGlavniFile);
-	int block = inode->i_size;
-	int inodeBlock,i;
+	int brojDuzine = 0;
+	int numTmp = inodeZaUpis->i_num;
+	while(numTmp > 0){
+		numTmp /= 10;
+		brojDuzine++;
+	}
+	brojDuzine = brojDuzine + 2; // zbog ' ' i zbog ','
 
-	inodeBlock = bmap(inode,block/1024);
-	bh = bread(inode->i_dev,inodeBlock);
-	if (debugBr) printk("Ovoliko je string : |%s|,ovoliko je duzina stringa : %d, inode size : %d\n", bh->b_data,strlen(bh->b_data),inode->i_size);
+	int hashBroj;
+	int indexCurr = getIndexCurrenta();
+	if (nizProcesIDova[indexCurr] != -1){
+		hashBroj = hashString(nizProcesa[nizProcesIDova[indexCurr]]);
+	}else {
+		hashBroj = hashString(global_key);
+		if (debugBr) printk("ovde sam i broj je ovoliko : %d, |%s|\n",hashBroj,global_key);
+	}
 
-	int brojKraja = 0;
-	for (i = 0 ; i < 1024 ; i++) {
-		if (bh->b_data[i] == '\0'){
-			brojKraja = i;
-			break;
-		}
+	numTmp = hashBroj;
+	while(numTmp > 0){
+		numTmp /= 10;
+		brojDuzine++;
 	}
 
 	char buffer[5];
 	brojToString(inodeZaUpis->i_num,buffer);
 
-	if (brojKraja + strlen(buffer) + 1 > 1024){
+	char bufferHash[11];
+	brojToString(hashBroj,bufferHash);
+
+	char ceoString[20] = "";
+	strcat(ceoString,buffer);
+	strcat(ceoString," ");
+	strcat(ceoString,bufferHash);
+	strcat(ceoString,",");
+
+	struct m_inode * inode;
+	struct buffer_head * bh;
+	inode = iget(0x301,brojZaGlavniFile);
+
+	int block = 0;
+	int inodeBlock;
+	char boolean = 1;
+
+	if (debugBr) printk("inode_i_size : %d, string : %s\n",inode->i_size,ceoString);
+
+	while(block < inode->i_size){
+		inodeBlock = bmap(inode,block/1024);
+		bh = bread(inode->i_dev,inodeBlock);
+		if (strlen(bh->b_data) + brojDuzine < 1024){
+			boolean = 0;
+			strcat(bh->b_data,ceoString);
+			inode->i_ctime = CURRENT_TIME;
+			inode->i_size += strlen(ceoString);
+			inode->i_dirt = 1; 
+			if (debugBr) printk("usao ovde : |%s|%d|%d|\n","",strlen(bh->b_data),inode->i_size);
+			bh->b_dirt = 1;
+			brelse(bh);
+			break;
+		}
+
+		block = block + 1024;
+		bh->b_dirt = 1;
 		brelse(bh);
-		iput(inode);
-		return;
-	}
-	//printk("Ovo je :%s, ovo je broj : %d, ovoliko ce biti i : %d, ici ce do ovde : %d\n",bh->b_data,brojKraja,brojKraja + 1,brojKraja + strlen(buffer) + 1);
-	if (strlen(bh->b_data) != 0/* || inode->i_size != 0*/) bh->b_data[brojKraja] = ' ';
-	else brojKraja--;
-	int j = 0;
-
-	for (i = brojKraja + 1 ; i < brojKraja + strlen(buffer) + 1 ; i++){
-		bh->b_data[i] = buffer[j++];
 	}
 
-	bh->b_data[i] = '\0';
-	bh->b_dirt = 1;
-	//printk("This shit 1: |%s|, this big : %d",bh->b_data,i);
-	inode->i_ctime = CURRENT_TIME;
-	inode->i_size = i;
-	inode->i_dirt = 1;
-	if (debugBr) printk("Ovoliko je string : |%s|,ovoliko je duzina stringa : %d, inode size : %d\n", bh->b_data,strlen(bh->b_data),inode->i_size);
-	brelse(bh);
-	iput(inode);
+	if (boolean){
+		if (inode->i_size % 1024 != 0)
+			fillStuff(bh,inode);
+		inodeBlock = create_block(inode,block/1024);
+		bh = bread(inode->i_dev,inodeBlock);
+		int brojBHKraj = strlen(bh->b_data);
+		strcat(bh->b_data,ceoString);
+		inode->i_ctime = CURRENT_TIME;
+		inode->i_size += strlen(ceoString);
+		inode->i_dirt = 1; 
+		bh->b_dirt = 1;
+		if (debugBr) printk("CAO usao ovde : |%s|%d|%d|\n",bh->b_data,strlen(bh->b_data),inode->i_size);
+		brelse(bh);
+	}
 }
 
 int sys_encry(char *string)
@@ -510,22 +647,33 @@ int sys_encry(char *string)
 	int i = 0;
 
 	inode = namei(string);
+	
+	/// DEBUG SKLONITI POSLEEEEEEEEEEEEEE
+	/*upisiUFajl(inode);
 
+	return 0;*/
+	/// DEBUG SKLONITI POSLEEEEEEEEEEEEEE
 	if (inode->i_num == brojZaGlavniFile)
 		return -EPERM;
 	if (inode == NULL)
 		return -ENOFILE;
 	if (S_ISDIR(inode->i_mode))
 		return -EISDIR;
-	if (global_key[0] == '\0')
+	int curr = getIndexCurrenta();
+	if (global_key[0] == '\0' && nizProcesIDova[curr] == -1)
 		return -EKEYNOTFOUND;
 
-	struct m_inode * tmpNode;
-	tmpNode = isItInTheFile(inode);
-	if (tmpNode == NULL){
+	char keyUsed[514];
+	strcpy(keyUsed,global_key);
+	int tmpNode = isItInTheFile(inode);
+	if (nizProcesIDova[curr] != -1){
+		strcpy(keyUsed,nizProcesa[nizProcesIDova[curr]]);
+	}
+
+	if (tmpNode == -1){
 		upisiUFajl(inode);
 	}else{
-		iput(inode);
+		//iput(inode);
 		return -EAENCR;
 	}
 
@@ -536,7 +684,7 @@ int sys_encry(char *string)
 		inodeBlock = bmap(inode,block/1024);
 		bh = bread(inode->i_dev,inodeBlock);
 
-		enkriptuj(bh->b_data,stringData);
+		enkriptuj(bh->b_data,stringData,keyUsed);
 
 		for (i = 0 ; i < 1024 ; i++){
 			bh->b_data[i] = stringData[i];
@@ -546,7 +694,7 @@ int sys_encry(char *string)
 		bh->b_dirt = 1;
 		brelse(bh);
 	}
-	iput(inode);
+	//iput(inode);
 	return 0;
 }
 
@@ -565,16 +713,44 @@ int sys_decry(char *string)
 		return -ENOFILE;
 	if (S_ISDIR(inode->i_mode))
 		return -EISDIR;
-	if (global_key[0] == '\0')
+	int curr = getIndexCurrenta();
+	if (global_key[0] == '\0' && nizProcesIDova[curr] == -1)
 		return -EKEYNOTFOUND;
 
-	struct m_inode * tmpNode;
-	tmpNode = isItInTheFile(inode);
-	if (tmpNode == NULL){
-		iput(inode);
+	char keyUsed[514];
+	strcpy(keyUsed,global_key);
+
+	int tmpNode = isItInTheFile(inode);
+	if (tmpNode == -1){
+		//iput(inode);
 		return -EAENCR;
 	}else{
-		izbrisiIzFajla(inode);
+		char tmpStr[10];
+		brojToString(tmpNode,tmpStr);
+		int duzina = strlen(tmpStr);
+		// ako postoji key za proces 
+		if (nizProcesIDova[curr] != -1){
+			if (hashString(nizProcesa[nizProcesIDova[curr]]) == tmpNode){
+				izbrisiIzFajla(inode,duzina);
+				strcpy(keyUsed,nizProcesa[nizProcesIDova[curr]]);
+			}else{ // ako hesh nije dobar probamo sa globalnim ako postoji
+				if (global_key[0] == '\0'){
+					if (hashString(global_key) == tmpNode){
+						izbrisiIzFajla(inode,duzina);
+					}else {
+						return -EKEYNOTFOUND;
+					}
+				}else {
+					return -EKEYNOTFOUND;
+				}
+			}
+		}else { // ako ne postoji key za proces znamo da postoji za globalni onda
+			if (hashString(global_key) == tmpNode){
+				izbrisiIzFajla(inode,duzina);
+			}else {
+				return -EKEYNOTFOUND; // ako globalni key hash nije isti kao hash za koji smo zapamtili return error
+			}
+		}
 	}
 
 	int block = inode->i_size;
@@ -584,7 +760,7 @@ int sys_decry(char *string)
 		inodeBlock = bmap(inode,block/1024);
 		bh = bread(inode->i_dev,inodeBlock);
 
-		dekriptuj(bh->b_data,stringData);
+		dekriptuj(bh->b_data,stringData,keyUsed);
 
 		for (i = 0 ; i < 1024 ; i++){
 			bh->b_data[i] = stringData[i];
@@ -594,11 +770,11 @@ int sys_decry(char *string)
 		bh->b_dirt = 1;
 		brelse(bh);
 	}
-	iput(inode);
+	//iput(inode);
 	return 0;
 }
 
-int encryWithInode(struct m_inode * inodeTmp, int bool)
+int encryWithInode(struct m_inode * inodeTmp, int bool, int hashedKey)
 {
 	struct m_inode * inode;
 	struct buffer_head * bh;
@@ -612,8 +788,18 @@ int encryWithInode(struct m_inode * inodeTmp, int bool)
 	if (S_ISDIR(inode->i_mode)){
 		return -EISDIR;
 	}
+	char keyUsed[514];
+	strcpy(keyUsed,global_key);
+	int curr = getIndexCurrenta();
+	char boolean = 0;
+	if (nizProcesIDova[curr] != -1){
+		strcpy(keyUsed,nizProcesa[nizProcesIDova[curr]]);
+		boolean = 1;
+	}
+
 	if (global_key[0] == '\0'){
-		return -EKEYNOTFOUND;
+		if (!boolean)
+			return -EKEYNOTFOUND;
 	}
 
 	int block = inode->i_size;
@@ -623,7 +809,7 @@ int encryWithInode(struct m_inode * inodeTmp, int bool)
 		inodeBlock = bmap(inode,block/1024);
 		bh = bread(inode->i_dev,inodeBlock);
 
-		enkriptuj(bh->b_data,stringData);
+		enkriptuj(bh->b_data,stringData,keyUsed);
 
 		for (i = 0 ; i < 1024 ; i++){
 			bh->b_data[i] = stringData[i];
@@ -636,7 +822,7 @@ int encryWithInode(struct m_inode * inodeTmp, int bool)
 	return 0;
 }
 
-int decryWithInode(struct m_inode * inodeTmp, int bool)
+int decryWithInode(struct m_inode * inodeTmp, int bool, int hashedKey)
 {
 	struct m_inode * inode;
 	struct buffer_head * bh;
@@ -650,18 +836,31 @@ int decryWithInode(struct m_inode * inodeTmp, int bool)
 	if (S_ISDIR(inode->i_mode)){
 		return -EISDIR;
 	}
-	if (global_key[0] == '\0'){
+	char keyUsed[514];
+	keyUsed[0] = '\0';
+	int curr = getIndexCurrenta();
+	char boolean = 0;
+	if (nizProcesIDova[curr] != -1){
+		if (hashString(nizProcesa[nizProcesIDova[curr]]) == hashedKey){
+			strcpy(keyUsed,nizProcesa[nizProcesIDova[curr]]);
+			boolean = 1;
+		}
+	}
+	if (hashString(global_key) == hashedKey){
+		strcpy(keyUsed,global_key);
+	}
+
+	if (keyUsed[0] == '\0'){
 		return -EKEYNOTFOUND;
 	}
 
 	int block = inode->i_size;
 	int inodeBlock;
-
 	while(block > 0){
 		inodeBlock = bmap(inode,block/1024);
 		bh = bread(inode->i_dev,inodeBlock);
 
-		dekriptuj(bh->b_data,stringData);
+		dekriptuj(bh->b_data,stringData,keyUsed);
 
 		for (i = 0 ; i < 1024 ; i++){
 			bh->b_data[i] = stringData[i];
@@ -674,15 +873,32 @@ int decryWithInode(struct m_inode * inodeTmp, int bool)
 	return 0;
 }
 
-int sys_keyclear()
+int sys_keyclear(int mode)
 {
-	global_key[0] = '\0';
-	return 0;
+	if (mode != 0 && mode != 1)
+		return -ERANGE;
+	if (!mode){
+		brojacGlobal = -1;
+		global_key[0] = '\0';
+		return 0;
+	}
+	if (mode){
+		int index = getIndexCurrenta();
+		if (nizProcesIDova[index] == -1){
+			return 0;
+		}
+		nizSlobodnih[nizProcesIDova[index]] = 1;
+		nizProcesa[nizProcesIDova[index]][0] = '\0';
+		nizProcesVremena[nizProcesIDova[index]] = -1;
+		nizProcesIDova[index] = -1;
+		return 0;
+	}
 }
 
 int sys_zapocni(char * string, int mode)
 {
 	if (mode == 2){
+		tmp = &current;
 		debugBr = !debugBr;
 		return 0;
 	}
@@ -690,6 +906,7 @@ int sys_zapocni(char * string, int mode)
 	struct m_inode * inode;
 	inode = namei(string);
 	brojZaGlavniFile = inode->i_num;
+	printk("ovoliko : %d",brojZaGlavniFile);
 
 	if (mode == 1){
 		struct buffer_head * bh;
@@ -701,6 +918,13 @@ int sys_zapocni(char * string, int mode)
 		brelse(bh);
 	}
 
-	iput(inode);
+	//iput(inode);
 	return 0;
+}
+
+int sys_menjanjeEchoa(char boolean){
+	if (!boolean)
+		tty_table[0].termios.c_lflag = tty_table[0].termios.c_lflag & ~0000010;
+	else 
+		tty_table[0].termios.c_lflag = tty_table[0].termios.c_lflag | 0000010;
 }

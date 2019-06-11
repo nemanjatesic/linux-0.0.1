@@ -33,6 +33,8 @@
 #define NPAR 16
 
 extern void keyboard_interrupt(void);
+extern struct task_struct *current;
+extern struct task_struct *task[NR_TASKS];
 
 static unsigned long origin=SCREEN_START;
 static unsigned long scr_end=SCREEN_START+LINES*COLUMNS*2;
@@ -626,7 +628,6 @@ int sys_clear(void)
 	gotoxy(0,0);*/
 	return 0;
 }
-
 
 int sys_videowrite(const char *buffer, int len, struct videowrite_args *args)
 {

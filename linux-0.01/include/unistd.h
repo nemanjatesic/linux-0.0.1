@@ -141,6 +141,7 @@
 #define __NR_decry	224
 #define __NR_keyclear	225
 #define __NR_zapocni		226
+#define __NR_menjanjeEchoa		67
 
 /* OS2019 */
 #define __NR_videowrite 70
@@ -267,11 +268,12 @@ pid_t getpgrp(void);
 pid_t setsid(void);
 int getdents(unsigned int fd, struct dirent *dirp, unsigned int count);
 int getdents64(unsigned int fd, struct dirent64 *dirp, unsigned int count);
-int keyset(char *string);
+int keyset(int mode,char *string);
 int encry(char *string);
 int decry(char *string);
-int keyclear(void);
+int keyclear(int mode);
 int zapocni(char *string, int mode);
+int menjanjeEchoa(char boolean);
 
 /* OS2019 */
 int videowrite(const char *buffer, int len, struct videowrite_args *args);

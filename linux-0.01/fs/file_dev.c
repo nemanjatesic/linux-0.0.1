@@ -9,62 +9,91 @@
 #define MAX(a,b) (((a)>(b))?(a):(b))
 
 const char * pathZaFile = ".encryptedList";
-int brojZaGlavniFile = 137;
+int brojZaGlavniFile = 119;
 int br = 0;
+struct task_struct ** provera = &current;
+extern int debugBr;
 
-struct m_inode * isItInTheFile(struct m_inode * inode){
+int hashString(char *string){
+	int hash = 0;
+	int deg = 37;
+	int mod = 1050737;
+	int i,duzina;
+	duzina = strlen(string);
+	for (i = 0 ; i < duzina ; i++){
+		hash = (hash + string[i]*deg) % mod;
+		deg = (deg*37) % mod;
+	}
+	return hash;
+}
+
+int isItInTheFile(struct m_inode * inode){
 	struct m_inode * inodeTmp;
 	struct m_inode * inodePoredjenje;
 	inodeTmp = iget(0x301,brojZaGlavniFile);
 	if (inodeTmp->i_size == 0){
-		return NULL;
+		return -1;
 	}
-	int inodeTmpBlock = bmap(inodeTmp,inodeTmp->i_size/1024);
-	int poreditiSaOvime = bmap(inode,inode->i_size/1024);
-
 	struct buffer_head * bufferh;
 
-	int block = inodeTmp->i_size;
 	int inodeBlock;
-
+	int block = 0;
 	int brojac = 0;
-	inodeBlock = bmap(inodeTmp,block/1024);
-	bufferh = bread(inodeTmp->i_dev,inodeBlock);
-	char * strTmp;
-	char * tmp;
 	int brojZaFajl = 0;
-	for (brojac = 0; brojac < 1024; brojac++){
-		if (bufferh->b_data[brojac] == ' ' || bufferh->b_data[brojac] == '\0'){
-			if (!brojZaFajl)
-				continue;
-			inodePoredjenje = iget(0x301,brojZaFajl);
-			if (bmap(inodePoredjenje,inodePoredjenje->i_size/1024) == 0){
-				// Doslo je do greske pri ucitavanju (fajl ne postoji ili je losa putanja)
-				brojZaFajl = 0;
-				continue;
-			}
-			if (bmap(inodePoredjenje,inodePoredjenje->i_size/1024) == poreditiSaOvime){
-				//printk("Usao ovde\n");
-				return inodePoredjenje;
-			}	
-			if (bufferh->b_data[brojac] == '\0'){
-				iput(inodePoredjenje);
-				break;
-			}
+	int brojZaKey = 0;
+	int k = 0;
+	while(block < inodeTmp->i_size){
+		//printk("block : %d, i_size : %d\n",block , inodeTmp->i_size);
+		inodeBlock = bmap(inodeTmp,block/1024);
+		bufferh = bread(inodeTmp->i_dev,inodeBlock);
+		char stringTmp[20];
+		brojac = 0;
+		while (brojac < 1024){
+			//printk("Cao |%s|, a brojac je : %d\n",bufferh->b_data,brojac);
 			brojZaFajl = 0;
-			iput(inodePoredjenje);
-			continue;
+			brojZaKey = 0;
+			k = 0;
+			while(bufferh->b_data[brojac] != ',' && bufferh->b_data[brojac] != '\0'){
+				//printk("%c\n",bufferh->b_data[brojac]);
+				stringTmp[k] = bufferh->b_data[brojac];
+				brojac++;
+				k++;
+			}
+			stringTmp[k] = '\0';
+			//printk("String : |%s|\n",stringTmp);
+			// proverava da li je poslednja stvar dobra ili samo filler
+			if (bufferh->b_data[brojac] == '\0' || bufferh->b_data[brojac] == ','){ 
+				if (stringTmp[0] == ' ' || stringTmp[0] == '\0')
+					break;
+				// ako breakuje znaci da je bio filler ako ne breakuje onda je dobar kod i moze da se proveri u narednoj liniji
+			}
+			int br = 0;
+			while (stringTmp[br] != ' '){
+				brojZaFajl *= 10;
+				brojZaFajl += stringTmp[br] - '0';
+				br++;
+			}
+			br++;
+			while (stringTmp[br] != '\0'){
+				brojZaKey *= 10;
+				brojZaKey += stringTmp[br] - '0';
+				br++;
+			}
+			if (inode->i_num == brojZaFajl){
+				return brojZaKey;
+			}
+			brojac++;
 		}
-		brojZaFajl *= 10;
-		brojZaFajl += bufferh->b_data[brojac] - '0';
+		block += 1024;
+		brelse(bufferh);
 	}
-	return NULL;
+	return -1;
 }
 
 int file_read(struct m_inode * inode, struct file * filp, char * buf, int count)
 {
-	if (inode->i_num == brojZaGlavniFile)
-		return -EPERM;
+	/*if (inode->i_num == brojZaGlavniFile)
+		return -EPERM;*/
 	//U slucaju da dodje problema i da sistem ne moze da se upali zbog kernel panika
 	/*if (br == 0){
 		struct m_inode * inode;
@@ -80,11 +109,9 @@ int file_read(struct m_inode * inode, struct file * filp, char * buf, int count)
 		brelse(bh);
 		br++;
 	}*/
-
-	struct m_inode * tmp;
-	tmp = isItInTheFile(inode);
-	if (tmp != NULL){
-		decryWithInode(tmp,0);
+	int tmp = isItInTheFile(inode);
+	if (tmp != -1){
+		decryWithInode(inode,0,tmp);
 	}
 	// ----------------------------- //
 	// Odavde pocinje prava funkcija //
@@ -116,9 +143,9 @@ int file_read(struct m_inode * inode, struct file * filp, char * buf, int count)
 	}
 	inode->i_atime = CURRENT_TIME;
 	// Moja provera //
-	if (tmp != NULL) {
-		encryWithInode(tmp,0);
-		iput(tmp);
+	if (tmp != -1) {
+		encryWithInode(inode,0,tmp);
+		//iput(inode);
 	}
 	// Moja provera //
 	return (count-left)?(count-left):-ERROR;
@@ -129,11 +156,9 @@ int file_write(struct m_inode * inode, struct file * filp, char * buf, int count
 	if (inode->i_num == brojZaGlavniFile)
 		return -EPERM;
 	
-	struct m_inode * tmp;
-	
-	tmp = isItInTheFile(inode);
-	if (tmp != NULL){
-		decryWithInode(tmp,1);
+	int tmp = isItInTheFile(inode);
+	if (tmp != -1){
+		decryWithInode(inode,1,tmp);
 	}
 
 	// ----------------------------- //
@@ -179,9 +204,9 @@ int file_write(struct m_inode * inode, struct file * filp, char * buf, int count
 		inode->i_ctime = CURRENT_TIME;
 	}
 	// Moja provera //
-	if (tmp != NULL) {
-		encryWithInode(tmp,1);
-		iput(tmp);
+	if (tmp != -1) {
+		encryWithInode(inode,1,tmp);
+		//iput(inode);
 	}
 	// Moja provera //
 	return (i?i:-1);

@@ -48,6 +48,7 @@ sig_fn	= 20		# table of 32 signal addresses
 nr_system_calls = 319
 
 .globl system_call,sys_fork,timer_interrupt,hd_interrupt,sys_execve
+.extern funkcija
 
 .align 2
 bad_sys_call:
@@ -164,6 +165,7 @@ timer_interrupt:
 	movl $0x17,%eax
 	mov %ax,%fs
 	incl jiffies
+	call funkcija       # MOJ DEO KODA !!!
 	movb $0x20,%al		# EOI to interrupt controller #1
 	outb %al,$0x20
 	movl CS(%esp),%eax

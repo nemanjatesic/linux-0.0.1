@@ -81,6 +81,7 @@ extern int sys_encry();
 extern int sys_decry();
 extern int sys_keyclear();
 extern int sys_zapocni();
+extern int sys_menjanjeEchoa();
 
 extern int sys_videowrite();
 extern int sys_clear();
@@ -97,7 +98,7 @@ sys_rmdir, sys_dup, sys_pipe, sys_times, sys_prof, sys_brk, sys_setgid,
 sys_getgid, sys_signal, sys_geteuid, sys_getegid, sys_acct, sys_phys,
 sys_lock, sys_ioctl, sys_fcntl, sys_mpx, sys_setpgid, sys_ulimit,
 sys_oldolduname, sys_umask, sys_chroot, sys_ustat, sys_dup2, sys_getppid,
-sys_getpgrp,sys_setsid, sys_null /*67*/,sys_null,sys_null,
+sys_getpgrp,sys_setsid, sys_menjanjeEchoa /*67*/,sys_menjanjeEchoa,sys_null,
 
 /* 70 */sys_videowrite,sys_clear,sys_change_user_layout,sys_null,sys_null, /* 70 - videowrite, 71 - clear, 72 - change layout*/
 sys_null,sys_null,sys_null,sys_null,sys_null,
