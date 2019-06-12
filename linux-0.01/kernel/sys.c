@@ -528,11 +528,12 @@ void izbrisiIzFajla(struct m_inode * inodeZaBrisanje, int duzinaHesha)
 		bh = bread(inode->i_dev,inodeBlock);
 		brojGdeKrece = doesItContainString(bh->b_data,buffer);
 		if (brojGdeKrece != -1){
-			if (brojGdeKrece > 0) brojGdeKrece--;
-			if (strlen(buffer) == strlen(bh->b_data)) brojPomeranja--;
 			shiftStringToLeft(brojGdeKrece, brojPomeranja, bh->b_data);
 			if (block + 1024 > inode->i_size)
 				inode->i_size -= brojPomeranja;
+			inode->i_dirt = 1;
+			brelse(bh);
+			break;
 		}
 		block += 1024;
 		brelse(bh);
@@ -734,21 +735,21 @@ int sys_decry(char *string)
 				izbrisiIzFajla(inode,duzina);
 				strcpy(keyUsed,nizProcesa[nizProcesIDova[curr]]);
 			}else{ // ako hesh nije dobar probamo sa globalnim ako postoji
-				if (global_key[0] == '\0'){
+				if (global_key[0] != '\0'){
 					if (hashString(global_key) == tmpNode){
 						izbrisiIzFajla(inode,duzina);
 					}else {
-						return -EKEYNOTFOUND;
+						return -EWRONGKEY;
 					}
 				}else {
-					return -EKEYNOTFOUND;
+					return -EWRONGKEY;
 				}
 			}
 		}else { // ako ne postoji key za proces znamo da postoji za globalni onda
 			if (hashString(global_key) == tmpNode){
 				izbrisiIzFajla(inode,duzina);
 			}else {
-				return -EKEYNOTFOUND; // ako globalni key hash nije isti kao hash za koji smo zapamtili return error
+				return -EWRONGKEY; // ako globalni key hash nije isti kao hash za koji smo zapamtili return error
 			}
 		}
 	}
@@ -906,7 +907,7 @@ int sys_zapocni(char * string, int mode)
 	struct m_inode * inode;
 	inode = namei(string);
 	brojZaGlavniFile = inode->i_num;
-	printk("ovoliko : %d",brojZaGlavniFile);
+	if(debugBr) printk("ovoliko : %d",brojZaGlavniFile);
 
 	if (mode == 1){
 		struct buffer_head * bh;

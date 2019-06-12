@@ -19,6 +19,7 @@ int main(char *args)
 		if (errno == EKEYNOTFOUND) printstr("Enkripcioni kljuc ne postoji.\n");
 		if (errno == EAENCR) printstr("Ne mozete dekriptovati vec dekriptovani fajl.\n");
 		if (errno == EPERM) printstr("Ne mozete da obrisete taj fajl. Operacija nije dozvoljena.\n");
+		if (errno == EWRONGKEY) printstr("Trenutni kljuc se ne poklapa sa onim sa kojim je ovaj fajl enkriptovan.\n");
 		_exit(1);
 	}
 

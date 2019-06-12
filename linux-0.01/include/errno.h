@@ -60,6 +60,7 @@ extern int errno;
 #define ENOFILE		41
 #define EKEYNOTFOUND	42
 #define EAENCR		43
+#define EWRONGKEY	44
 
 
 #endif
