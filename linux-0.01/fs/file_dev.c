@@ -9,7 +9,10 @@
 #define MAX(a,b) (((a)>(b))?(a):(b))
 
 const char * pathZaFile = ".encryptedList";
+const char * pathZaFoldere = ".encrFolders";
 int brojZaGlavniFile = 119;
+int brojZaFoldere = 128;
+
 int br = 0;
 struct task_struct ** provera = &current;
 extern int debugBr;
@@ -27,10 +30,10 @@ int hashString(char *string){
 	return hash;
 }
 
-int isItInTheFile(struct m_inode * inode){
+int isItInTheFile(struct m_inode * inode,int brojZaProveru){
 	struct m_inode * inodeTmp;
 	struct m_inode * inodePoredjenje;
-	inodeTmp = iget(0x301,brojZaGlavniFile);
+	inodeTmp = iget(0x301,brojZaProveru);
 	if (inodeTmp->i_size == 0){
 		return -1;
 	}
@@ -43,24 +46,20 @@ int isItInTheFile(struct m_inode * inode){
 	int brojZaKey = 0;
 	int k = 0;
 	while(block < inodeTmp->i_size){
-		//printk("block : %d, i_size : %d\n",block , inodeTmp->i_size);
 		inodeBlock = bmap(inodeTmp,block/1024);
 		bufferh = bread(inodeTmp->i_dev,inodeBlock);
 		char stringTmp[20];
 		brojac = 0;
 		while (brojac < 1024){
-			//printk("Cao |%s|, a brojac je : %d\n",bufferh->b_data,brojac);
 			brojZaFajl = 0;
 			brojZaKey = 0;
 			k = 0;
 			while(bufferh->b_data[brojac] != ',' && bufferh->b_data[brojac] != '\0'){
-				//printk("%c\n",bufferh->b_data[brojac]);
 				stringTmp[k] = bufferh->b_data[brojac];
 				brojac++;
 				k++;
 			}
 			stringTmp[k] = '\0';
-			//printk("String : |%s|\n",stringTmp);
 			// proverava da li je poslednja stvar dobra ili samo filler
 			if (bufferh->b_data[brojac] == '\0' || bufferh->b_data[brojac] == ','){ 
 				if (stringTmp[0] == ' ' || stringTmp[0] == '\0')
@@ -109,7 +108,7 @@ int file_read(struct m_inode * inode, struct file * filp, char * buf, int count)
 		brelse(bh);
 		br++;
 	}*/
-	int tmp = isItInTheFile(inode);
+	int tmp = isItInTheFile(inode,brojZaGlavniFile);
 	if (tmp != -1){
 		decryWithInode(inode,0,tmp);
 	}
@@ -156,7 +155,7 @@ int file_write(struct m_inode * inode, struct file * filp, char * buf, int count
 	if (inode->i_num == brojZaGlavniFile)
 		return -EPERM;
 	
-	int tmp = isItInTheFile(inode);
+	int tmp = isItInTheFile(inode,brojZaGlavniFile);
 	if (tmp != -1){
 		decryWithInode(inode,1,tmp);
 	}

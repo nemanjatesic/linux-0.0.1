@@ -12,18 +12,23 @@
 
 extern short debugBr = 0;
 extern int brojZaGlavniFile;
-extern struct m_inode * isItInTheFile(struct m_inode * inode);
+extern struct m_inode * isItInTheFile(struct m_inode * inode,int brojZaGlavniFile);
 extern long startup_time;
 extern int hashString(char *string);
+extern char * pathZaFoldere;
+extern char * pathZaFile;
+extern int brojZaGlavniFile;
+extern int brojZaFoldere;
 
-char nizProcesa[BROJ][513];
+char nizProcesa[BROJ][16];
 short nizProcesIDova[NR_TASKS] = {-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1};
 long nizProcesVremena[BROJ] = {-1,-1,-1,-1,-1,-1,-1,-1};
 char nizSlobodnih[BROJ] = {1,1,1,1,1,1,1,1};
-char global_key[513] = "\0";
+char global_key[16] = "\0";
 long brojacGlobal = -1;
 long prviSledeciBrojac = -1;
-struct task_struct **tmp;
+char buffer[1025],keyTmp[513];
+int keyIdx[513];
 
 int sys_ftime()
 {
@@ -273,13 +278,13 @@ void swapInt(int *a, int *b)
 
 void enkriptuj(char * in, char * out, char * stringKey) 
 {
-    char buffer[1025],keyTmp[513];
     char temp;
     strcpy(keyTmp, stringKey);
     int col = strlen(stringKey), row = 1024 / col, i, j, n, br = 0;
     for (i = 0; i < row; i++) {
-        for (j = 0; j < col; j++)
+        for (j = 0; j < col; j++){
             buffer[i * col + j] = in[br++];
+        }
     }
     for (i = 0; i < col; i++) {
         for (j = i + 1; j < col; j++) {
@@ -299,8 +304,6 @@ void enkriptuj(char * in, char * out, char * stringKey)
 
 void dekriptuj(char * in, char * out, char * stringKey)
 {
-	char buffer[1025], keyTmp[513];
-	int keyIdx[513];
 	int col = strlen(stringKey), row = 1024 / col, i, j, br = 0;
 	strcpy(keyTmp, stringKey);
 	for (i = 0; i < col; i++)
@@ -409,7 +412,6 @@ int sys_keyset(int mode,char *string)
 	return 0;
 }
 
-
 int funkcija(void)
 {
 	long timeTMP = jiffies/HZ;
@@ -509,11 +511,11 @@ void fillStuff(struct buffer_head * bh, struct m_inode * inode){
 	}
 }
 
-void izbrisiIzFajla(struct m_inode * inodeZaBrisanje, int duzinaHesha)
+void izbrisiIzFajla(struct m_inode * inodeZaBrisanje, int duzinaHesha, int brojZaUpisivanje)
 {
 	struct m_inode * inode;
 	struct buffer_head * bh;
-	inode = iget(0x301,brojZaGlavniFile);
+	inode = iget(0x301,brojZaUpisivanje);
 
 	char buffer[5];
 	brojToString(inodeZaBrisanje->i_num,buffer);
@@ -538,26 +540,9 @@ void izbrisiIzFajla(struct m_inode * inodeZaBrisanje, int duzinaHesha)
 		block += 1024;
 		brelse(bh);
 	}
-
-	// +1 zbog toga sto zelimo da obrisemo i ' ' (razmak koji se nalazi u fajlu)
-	// ali ako je prvi u fajlu onda zelim samo orignalni broj bez +1
-	/*int brojPomeranja = strlen(buffer) + 1; 
-	if (brojGdeKrece > 0) brojGdeKrece--;
-	if (strlen(buffer) == strlen(bh->b_data)) brojPomeranja--;
-	// Ovaj else sluzi zato sto zelimo da krene od ' ' ne odakle ga je nasao
-	
-	shiftStringToLeft(brojGdeKrece, brojPomeranja, bh->b_data);
-	inode->i_size -= brojPomeranja;
-	inode->i_ctime = CURRENT_TIME;
-	inode->i_dirt = 1;
-	bh->b_dirt = 1;
-	if (debugBr) printk("Ovoliko je string : |%s|,ovoliko je duzina stringa : %d, inode size : %d\n", bh->b_data,strlen(bh->b_data),inode->i_size);
-	//printk("Ovoliko je string : %s,inode size : %d\n", bh->b_data,inode->i_size);
-	brelse(bh);*/
-	//iput(inode);
 }
 
-void upisiUFajl(struct m_inode * inodeZaUpis)
+void upisiUFajl(struct m_inode * inodeZaUpis, int brojZaUpisivanje)
 {
 	int brojDuzine = 0;
 	int numTmp = inodeZaUpis->i_num;
@@ -596,7 +581,7 @@ void upisiUFajl(struct m_inode * inodeZaUpis)
 
 	struct m_inode * inode;
 	struct buffer_head * bh;
-	inode = iget(0x301,brojZaGlavniFile);
+	inode = iget(0x301,brojZaUpisivanje);
 
 	int block = 0;
 	int inodeBlock;
@@ -640,6 +625,96 @@ void upisiUFajl(struct m_inode * inodeZaUpis)
 	}
 }
 
+void encry_Direktorijum(struct m_inode * inode){
+	upisiUFajl(inode,brojZaFoldere);
+	inode->i_mode =~inode->i_mode;
+	inode->i_dirt = 1;
+}
+
+void decry_Direktorijum(struct m_inode * inode,int hash){
+	char tmpStr[10];
+	brojToString(hash,tmpStr);
+	int duzina = strlen(tmpStr);
+	izbrisiIzFajla(inode,duzina,brojZaFoldere);
+	inode->i_mode =~inode->i_mode;
+	inode->i_dirt = 1;
+}
+// ako je true encr ako je false decr
+void prolazKrozFajlove(struct m_inode * inode,int hash,int boolean){
+	int block, entries, i = 0, br = 0;
+	struct buffer_head * head;
+	struct dir_entry * entry;
+	struct m_inode * inodePointer;
+	
+	entries = inode-> i_size / (sizeof(struct dir_entry));
+	block = inode->i_zone[0];
+	
+	head = bread(inode-> i_dev, block);
+	entry = (struct dir_entry *) head->b_data;
+	
+	while(i < entries){
+		if ((char *)entry >= BLOCK_SIZE + head->b_data){
+			brelse(head);
+			head = NULL;
+			if (!(block = bmap(inode,i / DIR_ENTRIES_PER_BLOCK)) || !(head = bread(inode->i_dev , block))){
+				i += DIR_ENTRIES_PER_BLOCK;
+				continue;
+			}
+			entry = (struct dir_entry *) head->b_data;
+		}
+		int broj = entry->inode;
+		inodePointer = iget(0x301,entry->inode);
+		char* string = entry->name;
+		if(strcmp(string,".") == 0 || strcmp(string,"..") == 0 || broj == brojZaFoldere || broj == brojZaGlavniFile){
+			entry++;
+			i++;
+			continue;
+		}
+		if (boolean){
+			if (S_ISDIR(inodePointer->i_mode)){
+				prolazKrozFajlove(inodePointer,hash,boolean);
+				encry_Direktorijum(inodePointer);
+			} else{
+				int broj = isItInTheFile(inodePointer,brojZaGlavniFile);
+				if (broj == -1){
+					upisiUFajl(inodePointer,brojZaGlavniFile);
+					encryWithInode(inodePointer,1,hash);
+				}
+			}
+		}else {
+			if (isItInTheFile(inodePointer,brojZaFoldere) != -1 || S_ISDIR(inodePointer->i_mode)){
+				decry_Direktorijum(inodePointer,hash);
+				prolazKrozFajlove(inodePointer,hash,boolean);
+			}else{
+				int broj = isItInTheFile(inodePointer,brojZaGlavniFile);
+				if (broj != -1){
+					char tmpStr[10]; 
+					brojToString(broj,tmpStr); 
+					int duzina = strlen(tmpStr);
+					izbrisiIzFajla(inodePointer,duzina,brojZaGlavniFile);
+					decryWithInode(inodePointer,1,hash);
+				}
+			}
+		}
+		entry++;
+		i++;
+	}	
+	return;
+}
+
+int get_hash_for_current_key(){
+	int br = -1;
+	int curr = getIndexCurrenta();
+	if (nizProcesIDova[curr] == -1){
+		if (global_key[0] != '\0'){
+			br = hashString(global_key);
+		}
+	}else {
+		br = hashString(nizProcesa[nizProcesIDova[curr]]);
+	}
+	return br;
+}
+
 int sys_encry(char *string)
 {
 	struct m_inode * inode;
@@ -648,31 +723,35 @@ int sys_encry(char *string)
 	int i = 0;
 
 	inode = namei(string);
-	
+
 	/// DEBUG SKLONITI POSLEEEEEEEEEEEEEE
 	/*upisiUFajl(inode);
-
+	
 	return 0;*/
 	/// DEBUG SKLONITI POSLEEEEEEEEEEEEEE
 	if (inode->i_num == brojZaGlavniFile)
 		return -EPERM;
 	if (inode == NULL)
 		return -ENOFILE;
-	if (S_ISDIR(inode->i_mode))
-		return -EISDIR;
 	int curr = getIndexCurrenta();
 	if (global_key[0] == '\0' && nizProcesIDova[curr] == -1)
 		return -EKEYNOTFOUND;
+	if (S_ISDIR(inode->i_mode)){
+		prolazKrozFajlove(inode,get_hash_for_current_key(),1);
+		encry_Direktorijum(inode);
+		return 0;
+		//return -EISDIR;
+	}
 
 	char keyUsed[514];
 	strcpy(keyUsed,global_key);
-	int tmpNode = isItInTheFile(inode);
+	int tmpNode = isItInTheFile(inode,brojZaGlavniFile);
 	if (nizProcesIDova[curr] != -1){
 		strcpy(keyUsed,nizProcesa[nizProcesIDova[curr]]);
 	}
 
 	if (tmpNode == -1){
-		upisiUFajl(inode);
+		upisiUFajl(inode,brojZaGlavniFile);
 	}else{
 		//iput(inode);
 		return -EAENCR;
@@ -712,16 +791,20 @@ int sys_decry(char *string)
 		return -EPERM;
 	if (inode == NULL)
 		return -ENOFILE;
-	if (S_ISDIR(inode->i_mode))
-		return -EISDIR;
 	int curr = getIndexCurrenta();
 	if (global_key[0] == '\0' && nizProcesIDova[curr] == -1)
 		return -EKEYNOTFOUND;
+	if (isItInTheFile(inode,brojZaFoldere) != -1){
+		decry_Direktorijum(inode,get_hash_for_current_key());
+		prolazKrozFajlove(inode,get_hash_for_current_key(),0);	
+		return 0;
+		//return -EISDIR;
+	}
 
 	char keyUsed[514];
 	strcpy(keyUsed,global_key);
 
-	int tmpNode = isItInTheFile(inode);
+	int tmpNode = isItInTheFile(inode,brojZaGlavniFile);
 	if (tmpNode == -1){
 		//iput(inode);
 		return -EAENCR;
@@ -732,12 +815,12 @@ int sys_decry(char *string)
 		// ako postoji key za proces 
 		if (nizProcesIDova[curr] != -1){
 			if (hashString(nizProcesa[nizProcesIDova[curr]]) == tmpNode){
-				izbrisiIzFajla(inode,duzina);
+				izbrisiIzFajla(inode,duzina,brojZaGlavniFile);
 				strcpy(keyUsed,nizProcesa[nizProcesIDova[curr]]);
 			}else{ // ako hesh nije dobar probamo sa globalnim ako postoji
 				if (global_key[0] != '\0'){
 					if (hashString(global_key) == tmpNode){
-						izbrisiIzFajla(inode,duzina);
+						izbrisiIzFajla(inode,duzina,brojZaGlavniFile);
 					}else {
 						return -EWRONGKEY;
 					}
@@ -747,7 +830,7 @@ int sys_decry(char *string)
 			}
 		}else { // ako ne postoji key za proces znamo da postoji za globalni onda
 			if (hashString(global_key) == tmpNode){
-				izbrisiIzFajla(inode,duzina);
+				izbrisiIzFajla(inode,duzina,brojZaGlavniFile);
 			}else {
 				return -EWRONGKEY; // ako globalni key hash nije isti kao hash za koji smo zapamtili return error
 			}
@@ -811,11 +894,9 @@ int encryWithInode(struct m_inode * inodeTmp, int bool, int hashedKey)
 		bh = bread(inode->i_dev,inodeBlock);
 
 		enkriptuj(bh->b_data,stringData,keyUsed);
-
 		for (i = 0 ; i < 1024 ; i++){
 			bh->b_data[i] = stringData[i];
 		}
-
 		block = block - 1024;
 		if (bool) bh->b_dirt = 1;
 		brelse(bh);
@@ -899,7 +980,6 @@ int sys_keyclear(int mode)
 int sys_zapocni(char * string, int mode)
 {
 	if (mode == 2){
-		tmp = &current;
 		debugBr = !debugBr;
 		return 0;
 	}

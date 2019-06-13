@@ -35,8 +35,6 @@ static int minix_getdents(struct m_inode * inode, struct file * filp,
 			de = (struct dir_entry *) (offset + bh->b_data);
 			offset += sizeof(struct dir_entry);//info->s_dirsize; 
 			filp->f_pos += sizeof(struct dir_entry);
-			if (doesItContainString(de->name, pathZaFile) == 0)
-				return 0;
 			if (de->inode) {
 				for (i = 0; i < NAME_LEN; i++)
 					if ((c = de->name[i]) != 0)
